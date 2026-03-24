@@ -1,7 +1,7 @@
 ﻿CXX := clang++
 CPPFLAGS_RELEASE := -O3 -Wall -Wextra -Wpedantic -std=c++23 -Iinclude
 CPPFLAGS_DEBUG := -g -Wall -Wextra -Wpedantic -std=c++23 -Iinclude
-LDFLAGS := -lm
+LDFLAGS = -lm -lX11 -lGL -lXrandr
 
 SRC := src
 OUT := euterpe

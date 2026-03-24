@@ -1,11 +1,11 @@
 #include <iostream>
 #include <cmath>
-#include <array>
+#include <cctype>
 #include <unordered_map>
-#include <atomic>
-#include <termios.h>
 #include <unistd.h>
-#include <fcntl.h>
+
+#define RGFW_IMPLEMENTATION
+#include "RGFW.h"
 
 #include <miniaudio.h>
 
@@ -43,7 +43,7 @@ void synthFunction(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
         (void)pInput;
 
         static std::unordered_map<char, float> phaseMap;
-        static float volumePerNote = 0.2f; 
+        static float volumePerNote = 0.2f;
 
         float* fOutput = (float*)pOutput;
 
@@ -56,14 +56,14 @@ void synthFunction(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
                         if (isKeyToggledMap[key])
                         {
                                 rawMix += std::sin(phaseMap[key]) * volumePerNote;
-
                                 phaseMap[key] += 2.0f * 3.14159f * freq / 44100.0f;
-                                if (phaseMap[key] > 2.0f * 3.14159f) 
+
+                                if (phaseMap[key] > 2.0f * 3.14159f)
                                 {
                                         phaseMap[key] -= 2.0f * 3.14159f;
                                 }
                         }
-                        else 
+                        else
                         {
                                 phaseMap[key] = 0.0f;
                         }
@@ -76,56 +76,46 @@ void synthFunction(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
         }
 }
 
-void processInput(const std::unordered_map<char, float>& keyMap, std::unordered_map<char, bool>& isKeyToggledMap)
-{
-        char ch;
-        if (read(STDIN_FILENO, &ch, 1) > 0)
-        {
-                if (keyMap.count(ch))
-                {
-                        if (!isKeyToggledMap.at(ch))
-                        {
-                                isKeyToggledMap[ch] = true;
-                        }
-                        else
-                        {
-                                isKeyToggledMap[ch] = false;
-                        }
-                }
-                if (ch == 'x')
-                {
-                        for (auto& [key, toggled] : isKeyToggledMap)
-                        {
-                                toggled = false;
-                        }
-                }
-        }
-}
-
 int main()
 {
-        struct termios oldt, newt;
-        tcgetattr(STDIN_FILENO, &oldt);
-        newt = oldt;
-        newt.c_lflag &= ~(ICANON | ECHO);
-        tcsetattr(STDIN_FILENO, TCSANOW, &newt);
-
-        int oldf = fcntl(STDIN_FILENO, F_GETFL, 0);
-        fcntl(STDIN_FILENO, F_SETFL, oldf | O_NONBLOCK);
+        RGFW_window* win = RGFW_createWindow("Euterpe Input", 0, 0, 250, 250, RGFW_windowCenter | RGFW_windowNoResize);
 
         ma_device* device = init(synthFunction);
+        if (!device)
+        {
+                return -1;
+        }
 
         bool isRunning = true;
-        while (isRunning)
+        while (isRunning && !RGFW_window_shouldClose(win))
         {
-                processInput(keyToNote, isKeyToggledMap);
+                RGFW_event event;
+                while (RGFW_window_checkEvent(win, &event))
+                {
+                        if (event.type == RGFW_keyPressed)
+                        {
+                                char key = std::tolower((char)event.key.value);
+                                if (isKeyToggledMap.count(key))
+                                {
+                                        isKeyToggledMap[key] = true;
+                                }
+                        }
+
+                        if (event.type == RGFW_keyReleased)
+                        {
+                                char key = std::tolower((char)event.key.value);
+                                if (isKeyToggledMap.count(key))
+                                {
+                                        isKeyToggledMap[key] = false;
+                                }
+                        }
+                }
+
                 usleep(1000);
         }
 
         close(device);
-
-        tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
-        fcntl(STDIN_FILENO, F_SETFL, oldf);
+        RGFW_window_close(win);
 
         return 0;
 }
