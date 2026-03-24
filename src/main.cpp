@@ -11,8 +11,6 @@
 
 #include "init.h"
 
-std::atomic<float> frequency{0.0f};
-
 const std::unordered_map<char, float> keyToNote = {
         {'q', 261.63f},
         {'w', 293.66f},
@@ -26,39 +24,80 @@ const std::unordered_map<char, float> keyToNote = {
         {'p', 659.25f}
 };
 
+std::unordered_map<char, bool> isKeyToggledMap = {
+        {'q', false},
+        {'w', false},
+        {'e', false},
+        {'r', false},
+        {'t', false},
+        {'y', false},
+        {'u', false},
+        {'i', false},
+        {'o', false},
+        {'p', false}
+};
+
 void synthFunction(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
 {
-        static float phase = 0.0f;
-        static float volume = 0.5f;
+        (void)pDevice;
+        (void)pInput;
+
+        static std::unordered_map<char, float> phaseMap;
+        static float volumePerNote = 0.2f; 
 
         float* fOutput = (float*)pOutput;
-        float currentFreq = frequency.load();
 
         for (ma_uint32 iFrame = 0; iFrame < frameCount; iFrame++)
         {
-                float sample = (currentFreq > 0) ? sinf(phase) * volume : 0.0f;
+                float rawMix = 0.0f;
 
-                fOutput[iFrame * 2 + 0] = sample;
-                fOutput[iFrame * 2 + 1] = sample;
+                for (const auto& [key, freq] : keyToNote)
+                {
+                        if (isKeyToggledMap[key])
+                        {
+                                rawMix += std::sin(phaseMap[key]) * volumePerNote;
 
-                phase += 2.0f * 3.14159f * currentFreq / 44100.0f;
+                                phaseMap[key] += 2.0f * 3.14159f * freq / 44100.0f;
+                                if (phaseMap[key] > 2.0f * 3.14159f) 
+                                {
+                                        phaseMap[key] -= 2.0f * 3.14159f;
+                                }
+                        }
+                        else 
+                        {
+                                phaseMap[key] = 0.0f;
+                        }
+                }
 
-                if (phase > 2.0f * 3.14159f) phase -= 2.0f * 3.14159f;
+                float finalSample = std::tanh(rawMix);
+
+                fOutput[iFrame * 2 + 0] = finalSample;
+                fOutput[iFrame * 2 + 1] = finalSample;
         }
 }
 
-void processInput(std::atomic<float>& freq, const std::unordered_map<char, float>& keyMap)
+void processInput(const std::unordered_map<char, float>& keyMap, std::unordered_map<char, bool>& isKeyToggledMap)
 {
         char ch;
         if (read(STDIN_FILENO, &ch, 1) > 0)
         {
                 if (keyMap.count(ch))
                 {
-                        freq = keyMap.at(ch);
+                        if (!isKeyToggledMap.at(ch))
+                        {
+                                isKeyToggledMap[ch] = true;
+                        }
+                        else
+                        {
+                                isKeyToggledMap[ch] = false;
+                        }
                 }
                 if (ch == 'x')
                 {
-                        freq = -1.0f;
+                        for (auto& [key, toggled] : isKeyToggledMap)
+                        {
+                                toggled = false;
+                        }
                 }
         }
 }
@@ -79,8 +118,7 @@ int main()
         bool isRunning = true;
         while (isRunning)
         {
-                processInput(frequency, keyToNote);
-                if (frequency < 0) isRunning = false;
+                processInput(keyToNote, isKeyToggledMap);
                 usleep(1000);
         }
 
